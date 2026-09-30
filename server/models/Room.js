@@ -5,7 +5,6 @@ const roomSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       minlength: 2,
       maxlength: 50,
@@ -16,6 +15,19 @@ const roomSchema = new mongoose.Schema(
       trim: true,
       maxlength: 200,
       default: "",
+    },
+
+    type: {
+      type: String,
+      enum: ["public", "private"],
+      default: "public",
+    },
+
+    inviteCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      default: null,
     },
 
     createdBy: {

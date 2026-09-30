@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -13,15 +13,15 @@ const Register = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => {
+  const handleChange = (event) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [event.target.name]: event.target.value,
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
     setMessage("");
     setLoading(true);
@@ -32,6 +32,7 @@ const Register = () => {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify(formData),
       });
 
@@ -42,61 +43,120 @@ const Register = () => {
         return;
       }
 
-      setMessage("Account created successfully!");
-
-      setTimeout(() => {
-        navigate("/login");
-      }, 1000);
+      navigate("/login");
     } catch (error) {
-      setMessage("Unable to connect to server");
+      setMessage("Unable to connect to PulseChat server.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <h1>PulseChat</h1>
-      <h2>Create Account</h2>
+    <div className="auth-page">
+      <div className="auth-background">
+        <div className="auth-glow auth-glow-one" />
+        <div className="auth-glow auth-glow-two" />
+      </div>
 
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          name="username"
-          placeholder="Username"
-          value={formData.username}
-          onChange={handleChange}
-          required
-        />
+      <nav className="auth-nav">
+        <Link to="/" className="brand">
+          <span className="brand-mark">P</span>
+          PulseChat
+        </Link>
 
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={formData.email}
-          onChange={handleChange}
-          required
-        />
+        <Link to="/" className="auth-home-link">
+          Back to home
+        </Link>
+      </nav>
 
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          value={formData.password}
-          onChange={handleChange}
-          required
-        />
+      <main className="auth-main">
+        <div className="auth-card">
+          <div className="auth-card-glow" />
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Creating account..." : "Register"}
-        </button>
-      </form>
+          <div className="auth-icon register-icon">
+            <span>+</span>
+          </div>
 
-      {message && <p>{message}</p>}
+          <div className="auth-heading">
+            <span>CREATE YOUR SPACE</span>
+            <h1>Join PulseChat</h1>
+            <p>Create your account and start talking in real time.</p>
+          </div>
 
-      <p>
-        Already have an account? <Link to="/login">Login</Link>
-      </p>
+          <form onSubmit={handleSubmit} className="auth-form">
+            <label>
+              <span>Username</span>
+
+              <input
+                type="text"
+                name="username"
+                placeholder="Choose a username"
+                value={formData.username}
+                onChange={handleChange}
+                required
+              />
+            </label>
+
+            <label>
+              <span>Email address</span>
+
+              <input
+                type="email"
+                name="email"
+                placeholder="you@example.com"
+                value={formData.email}
+                onChange={handleChange}
+                required
+              />
+            </label>
+
+            <label>
+              <span>Password</span>
+
+              <input
+                type="password"
+                name="password"
+                placeholder="At least 6 characters"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                minLength={6}
+              />
+            </label>
+
+            {message && <div className="auth-message error">{message}</div>}
+
+            <button type="submit" className="auth-submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <span className="spinner" />
+                  Creating account...
+                </>
+              ) : (
+                <>
+                  Create PulseChat account
+                  <span>→</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="auth-divider">
+            <span />
+            <small>ALREADY HAVE AN ACCOUNT?</small>
+            <span />
+          </div>
+
+          <Link to="/login" className="auth-secondary">
+            Sign in instead
+          </Link>
+        </div>
+      </main>
+
+      <footer className="auth-footer">
+        <span>PulseChat</span>
+        <span>Real-time communication platform</span>
+      </footer>
     </div>
   );
 };

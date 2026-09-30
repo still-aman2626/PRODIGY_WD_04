@@ -10,8 +10,76 @@ const setupWebSocket = (server) => {
   });
 
   const connectedUsers = new Map();
+
   const roomConnections = new Map();
 
+  // --------------------------------
+  // Get unique online users in room
+  // --------------------------------
+  const getUniqueRoomOnlineCount = (roomId) => {
+    const roomSockets = roomConnections.get(roomId);
+
+    if (!roomSockets) {
+      return 0;
+    }
+
+    const uniqueUsers = new Set();
+
+    for (const client of roomSockets) {
+      if (client.readyState === WebSocket.OPEN && client.userId) {
+        uniqueUsers.add(client.userId);
+      }
+    }
+
+    return uniqueUsers.size;
+  };
+
+  // --------------------------------
+  // Broadcast room presence
+  // --------------------------------
+  const broadcastRoomPresence = (roomId) => {
+    if (!roomId) {
+      return;
+    }
+
+    const roomSockets = roomConnections.get(roomId);
+
+    if (!roomSockets) {
+      return;
+    }
+
+    const presenceMessage = JSON.stringify({
+      type: "room_presence_update",
+      roomId,
+      onlineCount: getUniqueRoomOnlineCount(roomId),
+    });
+
+    for (const client of roomSockets) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(presenceMessage);
+      }
+    }
+  };
+
+  // --------------------------------
+  // Broadcast global presence
+  // --------------------------------
+  const broadcastPresence = () => {
+    const presenceMessage = JSON.stringify({
+      type: "presence_update",
+      onlineCount: connectedUsers.size,
+    });
+
+    for (const client of connectedUsers.values()) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(presenceMessage);
+      }
+    }
+  };
+
+  // --------------------------------
+  // WebSocket connection
+  // --------------------------------
   wss.on("connection", (ws, req) => {
     console.log("WebSocket client connected");
 
@@ -30,6 +98,7 @@ const setupWebSocket = (server) => {
       );
 
       ws.close();
+
       return;
     }
 
@@ -44,6 +113,8 @@ const setupWebSocket = (server) => {
 
       connectedUsers.set(userId, ws);
 
+      broadcastPresence();
+
       console.log(`WebSocket authenticated for user: ${userId}`);
 
       ws.send(
@@ -54,13 +125,29 @@ const setupWebSocket = (server) => {
         }),
       );
 
+      // --------------------------------
+      // WebSocket messages
+      // --------------------------------
       ws.on("message", async (message) => {
         try {
           const data = JSON.parse(message.toString());
 
+          // ==========================================
           // JOIN ROOM
+          // ==========================================
           if (data.type === "join_room") {
             const { roomId } = data;
+
+            if (!roomId) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  message: "Room ID is required",
+                }),
+              );
+
+              return;
+            }
 
             const room = await Room.findById(roomId);
 
@@ -90,6 +177,24 @@ const setupWebSocket = (server) => {
               return;
             }
 
+            // Leave previous room
+            if (ws.currentRoomId && ws.currentRoomId !== roomId) {
+              const previousRoomId = ws.currentRoomId;
+
+              const previousRoomSockets = roomConnections.get(previousRoomId);
+
+              if (previousRoomSockets) {
+                previousRoomSockets.delete(ws);
+
+                if (previousRoomSockets.size === 0) {
+                  roomConnections.delete(previousRoomId);
+                }
+              }
+
+              broadcastRoomPresence(previousRoomId);
+            }
+
+            // Create room set
             if (!roomConnections.has(roomId)) {
               roomConnections.set(roomId, new Set());
             }
@@ -106,12 +211,54 @@ const setupWebSocket = (server) => {
               }),
             );
 
+            broadcastRoomPresence(roomId);
+
             console.log(`User ${userId} joined room ${roomId}`);
 
             return;
           }
 
+          // ==========================================
+          // LEAVE ROOM
+          // ==========================================
+          if (data.type === "leave_room") {
+            const { roomId } = data;
+
+            if (!roomId) {
+              return;
+            }
+
+            const roomSockets = roomConnections.get(roomId);
+
+            if (roomSockets) {
+              roomSockets.delete(ws);
+
+              if (roomSockets.size === 0) {
+                roomConnections.delete(roomId);
+              }
+            }
+
+            if (ws.currentRoomId === roomId) {
+              ws.currentRoomId = null;
+            }
+
+            ws.send(
+              JSON.stringify({
+                type: "room_left",
+                roomId,
+              }),
+            );
+
+            broadcastRoomPresence(roomId);
+
+            console.log(`User ${userId} left room ${roomId}`);
+
+            return;
+          }
+
+          // ==========================================
           // SEND ROOM MESSAGE
+          // ==========================================
           if (data.type === "room_message") {
             const { roomId, content } = data;
 
@@ -165,6 +312,7 @@ const setupWebSocket = (server) => {
               return;
             }
 
+            // Save message
             const savedMessage = await Message.create({
               sender: userId,
               room: roomId,
@@ -172,10 +320,12 @@ const setupWebSocket = (server) => {
               type: "text",
             });
 
+            // Populate sender
             const populatedMessage = await Message.findById(
               savedMessage._id,
             ).populate("sender", "username email");
 
+            // Broadcast message
             const roomSockets = roomConnections.get(roomId);
 
             if (roomSockets) {
@@ -196,6 +346,9 @@ const setupWebSocket = (server) => {
             return;
           }
 
+          // ==========================================
+          // UNKNOWN MESSAGE
+          // ==========================================
           ws.send(
             JSON.stringify({
               type: "error",
@@ -214,24 +367,38 @@ const setupWebSocket = (server) => {
         }
       });
 
+      // ==========================================
+      // CONNECTION CLOSED
+      // ==========================================
       ws.on("close", () => {
-        connectedUsers.delete(userId);
+        if (connectedUsers.get(userId) === ws) {
+          connectedUsers.delete(userId);
+        }
 
-        if (ws.currentRoomId) {
-          const roomSockets = roomConnections.get(ws.currentRoomId);
+        const closedRoomId = ws.currentRoomId;
+
+        if (closedRoomId) {
+          const roomSockets = roomConnections.get(closedRoomId);
 
           if (roomSockets) {
             roomSockets.delete(ws);
 
             if (roomSockets.size === 0) {
-              roomConnections.delete(ws.currentRoomId);
+              roomConnections.delete(closedRoomId);
             }
           }
         }
 
+        broadcastPresence();
+
+        broadcastRoomPresence(closedRoomId);
+
         console.log(`WebSocket disconnected for user: ${userId}`);
       });
 
+      // ==========================================
+      // SOCKET ERROR
+      // ==========================================
       ws.on("error", (error) => {
         console.error("WebSocket error:", error.message);
       });

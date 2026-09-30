@@ -1,21 +1,22 @@
 const express = require("express");
 
-const {
-  createRoom,
-  getRooms,
-  joinRoom,
-} = require("../controllers/roomController");
-
+const roomController = require("../controllers/roomController");
 const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
-router.post("/", createRoom);
+// Public rooms
+router.post("/", roomController.createRoom);
+router.get("/", roomController.getRooms);
 
-router.get("/", getRooms);
+// Private chats
+router.post("/private/create", roomController.createPrivateRoom);
+router.post("/private/join", roomController.joinPrivateRoom);
+router.patch("/private/:roomId/name", roomController.renamePrivateRoom);
 
-router.post("/:roomId/join", joinRoom);
+// Join existing room
+router.post("/:roomId/join", roomController.joinRoom);
 
 module.exports = router;
